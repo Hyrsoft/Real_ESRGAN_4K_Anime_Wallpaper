@@ -1,0 +1,26 @@
+.DS_Store
+node_modules/
+dist/
+.env
+.vscode/
+.idea/
+*.log
+coverage/
+*.tmp
+*.bak
+Thumbs.db       
+
+
+# 忽略Real-ESRGAN
+*.zip
+realesrgan-ncnn-vulkan-*/
+
+# 忽略图片
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+*.tiff
+*.svg
+*.webp
