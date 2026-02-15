@@ -105,6 +105,17 @@ def main():
         print("选择无效。")
         return
 
+    # 选择是否保持原有比例
+    print("\n--- 选择输出方式 ---")
+    print("[1] 保持原有比例 (4K 的 DPI)")
+    print("[2] 裁剪成标准4K (3840x2160)")
+    try:
+        ratio_choice = input("请选择 (1 或 2): ")
+        keep_ratio = ratio_choice == "1"
+    except (ValueError, IndexError):
+        print("选择无效，默认保持原有比例。")
+        keep_ratio = True
+
     # 3. 执行 Real-ESRGAN 放大 (4倍)
     output_upscaled = curr_dir / f"{input_img.stem}_upscaled.png"
     print(f"\n--- Step 3: 正在进行 AI 超分放大 (x4)... ---", flush=True)
@@ -139,25 +150,52 @@ def main():
     print(f"✅ 超分完成！", flush=True)
 
     # 4. 计算比例并执行 FFmpeg 缩放
-    print(f"\n--- Step 4: 正在根据比例执行 Fill 策略缩放... ---")
+    print(f"\n--- Step 4: 正在处理输出... ---")
     w, h = get_image_info(output_upscaled)
     current_ratio = w / h
     
     final_output = curr_dir / f"{input_img.stem}_4k_wallpaper.png"
 
-    # 根据文档逻辑判断
-    if current_ratio > TARGET_RATIO:
-        # 情况一：图片更宽，以高度 2160 为基准
-        vf_scale = f"scale=-1:{TARGET_HEIGHT}:flags=lanczos"
+    if keep_ratio:
+        # 保持原有比例：根据比例决定以宽度还是高度为基准
+        print("执行方式: 保持原有比例")
+        if current_ratio > TARGET_RATIO:
+            # 情况一：图片更宽，以高度 2160 为基准
+            vf_scale = f"scale=-1:{TARGET_HEIGHT}:flags=lanczos"
+        else:
+            # 情况二：图片更高，以宽度 3840 为基准
+            vf_scale = f"scale={TARGET_WIDTH}:-1:flags=lanczos"
+        
+        ffmpeg_cmd = [
+            "ffmpeg", "-y", "-i", str(output_upscaled),
+            "-vf", vf_scale,
+            str(final_output)
+        ]
     else:
-        # 情况二：图片更高，以宽度 3840 为基准
-        vf_scale = f"scale={TARGET_WIDTH}:-1:flags=lanczos"
-
-    ffmpeg_cmd = [
-        "ffmpeg", "-y", "-i", str(output_upscaled),
-        "-vf", vf_scale,
-        str(final_output)
-    ]
+        # 裁剪成标准4K: 先缩放至至少能覆盖目标分辨率，再裁剪中心部分
+        print("执行方式: 裁剪成标准4K (3840x2160)")
+        
+        # 计算缩放比例（保证图片能覆盖整个目标区域）
+        scale_factor_by_width = TARGET_WIDTH / w
+        scale_factor_by_height = TARGET_HEIGHT / h
+        scale_factor = max(scale_factor_by_width, scale_factor_by_height)
+        
+        # 新的宽高
+        new_w = int(w * scale_factor)
+        new_h = int(h * scale_factor)
+        
+        # 计算裁剪位置（居中）
+        crop_x = (new_w - TARGET_WIDTH) // 2
+        crop_y = (new_h - TARGET_HEIGHT) // 2
+        
+        # 使用 scale + crop 的 filter chain
+        vf_crop = f"scale={new_w}:{new_h}:flags=lanczos,crop={TARGET_WIDTH}:{TARGET_HEIGHT}:{crop_x}:{crop_y}"
+        
+        ffmpeg_cmd = [
+            "ffmpeg", "-y", "-i", str(output_upscaled),
+            "-vf", vf_crop,
+            str(final_output)
+        ]
     
     subprocess.run(ffmpeg_cmd)
     
